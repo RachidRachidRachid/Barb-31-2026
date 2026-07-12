@@ -85,16 +85,23 @@ header{height:70px;border-bottom:1px solid var(--border);display:flex;align-item
 .step-pill{font-family:var(--font-mono);font-size:.7rem;padding:7px 14px;border-radius:999px;border:1px solid var(--border);color:var(--text-dim);letter-spacing:.5px;display:flex;align-items:center;gap:6px;transition:.2s;}
 .step-pill.active{border-color:var(--gold);color:var(--gold-light);background:var(--gold-dim);}
 .step-pill.done{color:var(--success);border-color:rgba(52,211,153,.3);}
+.step-pill.done:hover{background:rgba(52,211,153,.1);border-color:var(--success);}
 .step-connector{width:20px;height:1px;background:var(--border);align-self:center;}
 
-/* ===== DATE / TIME ===== */
-.date-scroll{display:flex;gap:10px;overflow-x:auto;padding-bottom:10px;margin-bottom:24px;}
-.date-chip{flex:0 0 auto;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 16px;text-align:center;cursor:pointer;min-width:64px;transition:.15s;}
-.date-chip:hover{border-color:var(--gold);}
-.date-chip.selected{background:var(--gold);border-color:var(--gold);}
-.date-chip.selected .dow,.date-chip.selected .dnum{color:#000;}
-.date-chip .dow{font-size:.65rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;}
-.date-chip .dnum{font-family:var(--font-mono);font-size:1.2rem;font-weight:700;margin-top:2px;}
+/* ===== CALENDAR / TIME ===== */
+.calendar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.calendar-title { font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; text-transform: capitalize; }
+.calendar-nav { display: flex; gap: 8px; }
+.calendar-btn { background: var(--bg-elev); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: var(--radius-sm); cursor: pointer; transition: 0.15s; }
+.calendar-btn:hover:not(:disabled) { border-color: var(--gold); color: var(--gold-light); }
+.calendar-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 24px; }
+.calendar-day-name { text-align: center; font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; margin-bottom: 8px; letter-spacing: 1px; }
+.calendar-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: var(--font-mono); font-size: 0.95rem; cursor: pointer; transition: 0.15s; }
+.calendar-day:hover:not(.disabled) { border-color: var(--gold); }
+.calendar-day.selected { background: var(--gold); border-color: var(--gold); color: #000; font-weight: 700; }
+.calendar-day.disabled { opacity: 0.25; cursor: not-allowed; background: transparent; text-decoration: line-through; }
+.calendar-day.empty { background: transparent; border-color: transparent; cursor: default; }
 .time-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:10px;}
 .time-chip{font-family:var(--font-mono);background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;text-align:center;cursor:pointer;font-size:.85rem;transition:.15s;}
 .time-chip:hover{border-color:var(--gold);}
@@ -217,7 +224,7 @@ td{padding:14px 16px;border-top:1px solid var(--border);vertical-align:middle;}
 
   <div id="c-step-3" class="masque">
     <div class="step-title"><span class="num">03</span> Choisissez date &amp; heure</div>
-    <div class="date-scroll" id="date-scroll"></div>
+    <div id="calendar-wrapper"></div>
     <div class="time-grid" id="time-grid"></div>
   </div>
 
@@ -226,11 +233,11 @@ td{padding:14px 16px;border-top:1px solid var(--border);vertical-align:middle;}
     <div style="max-width:420px;">
       <div class="form-group">
         <label class="form-label">Nom complet</label>
-        <input class="form-input" id="input-nom" placeholder="Ex: Karim Benziane" oninput="validateStep4()">
+        <input class="form-input" id="input-nom" placeholder="Ex: Karim Benziane" oninput="validateStep4()" onkeydown="if(event.key==='Enter') document.getElementById('input-tel').focus()">
       </div>
       <div class="form-group">
         <label class="form-label">Téléphone</label>
-        <input class="form-input" id="input-tel" placeholder="Ex: 0555 12 34 56" oninput="validateStep4()">
+        <input class="form-input" id="input-tel" placeholder="Ex: 0555 12 34 56" oninput="validateStep4()" onkeydown="if(event.key==='Enter' && stepIsValid(4)) nextStep()">
       </div>
     </div>
   </div>
@@ -373,9 +380,8 @@ td{padding:14px 16px;border-top:1px solid var(--border);vertical-align:middle;}
 <script>
 /* ==========================================================
    BARBER PRO DZ — connecté à Google Sheets via Apps Script
-   Remplace l'URL ci-dessous par celle de TON déploiement Web App
    ========================================================== */
-const API_URL = 'https://script.google.com/macros/s/AKfycbw46lO4QZC0ZwsD1W0KA_DKOIKXRlFdr59cANjOwT4m2VxibSFJUBn8I0ra4xYX7_QiTg/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbzpr6ZHg3RfNRnECPD-e-BQ2qFkqIWbtIPIvvuZN_af7Uj1stU-Z1m-pz75Llh-EpAJAQ/exec';
 const POLL_MS = 5000;
 
 const DEFAULT_SETTINGS = { nomSalon: 'Barber Pro DZ', adresse: '', telephone: '', devise: 'DA', ouverture: '09:00', fermeture: '20:00', dureeSlot: 30, joursFermeture: [] };
@@ -402,12 +408,29 @@ async function apiPost(action, payload){
 }
 
 function parseFrDate(str){
-  // "dd/MM/yyyy HH:mm:ss" -> timestamp
   if (!str) return 0;
   const [d, t] = String(str).split(' ');
   const [day, month, year] = (d||'').split('/').map(Number);
   const [h, m, s] = (t||'0:0:0').split(':').map(Number);
   return new Date(year, (month||1)-1, day, h||0, m||0, s||0).getTime();
+}
+
+function formatTimeSetting(val, defaultVal) {
+  if (val === undefined || val === null || val === '') return defaultVal;
+  const str = String(val).trim();
+  if (!isNaN(Number(str)) && Number(str) > 0 && Number(str) < 1) {
+    const mins = Math.round(Number(str) * 24 * 60);
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+  }
+  if (str.includes('T')) {
+    const timeMatch = str.match(/T(\d{2}:\d{2})/);
+    if (timeMatch) return timeMatch[1];
+  }
+  const match = str.match(/(\d{1,2}):(\d{2})/);
+  if (match) return String(match[1]).padStart(2,'0') + ':' + match[2];
+  return defaultVal;
 }
 
 function normalizeData(raw){
@@ -430,8 +453,8 @@ function normalizeData(raw){
     devise: p.devise || DEFAULT_SETTINGS.devise,
     adresse: p.adresse || '',
     telephone: p.telephone || '',
-    ouverture: p.ouverture || DEFAULT_SETTINGS.ouverture,
-    fermeture: p.fermeture || DEFAULT_SETTINGS.fermeture,
+    ouverture: formatTimeSetting(p.ouverture, DEFAULT_SETTINGS.ouverture),
+    fermeture: formatTimeSetting(p.fermeture, DEFAULT_SETTINGS.fermeture),
     dureeSlot: Number(p.dureeSlot) || DEFAULT_SETTINGS.dureeSlot,
     joursFermeture: String(p.joursFermeture||'').split(',').filter(x=>x!=='').map(Number)
   };
@@ -581,56 +604,157 @@ window.selectCoiffeur = (key, nom) => {
   booking.coiffeurNom = nom;
   renderClientCoiffeurs();
   updateTicketBar();
+  setTimeout(() => { if (stepIsValid(booking.step)) window.nextStep(); }, 350);
 };
 
 // ================= CLIENT : DATE & HEURE (STEP 3) =================
-function buildAvailableDates(){
-  const dates = [];
+let currentMonth = new Date().getMonth();
+let currentYear = new Date().getFullYear();
+
+function getFirstAvailableDate() {
   let cursor = new Date();
-  let guard = 0;
-  while (dates.length < 14 && guard < 60){
-    guard++;
-    cursor.setDate(cursor.getDate() + (guard===1?0:1));
-    if (!(appData.settings.joursFermeture||[]).includes(cursor.getDay())){
-      dates.push(new Date(cursor));
-    }
+  const [fh, fm] = (appData.settings.fermeture || '20:00').split(':').map(Number);
+  const closingTime = fh * 60 + fm;
+  const nowTime = cursor.getHours() * 60 + cursor.getMinutes();
+  
+  if (nowTime >= closingTime) {
+      cursor.setDate(cursor.getDate() + 1);
   }
-  return dates;
+
+  let guard = 0;
+  while (guard < 60){
+    if (!(appData.settings.joursFermeture||[]).includes(cursor.getDay())){
+      return new Date(cursor);
+    }
+    cursor.setDate(cursor.getDate() + 1);
+    guard++;
+  }
+  return new Date();
 }
-function renderDateScroll(){
-  const wrap = document.getElementById('date-scroll');
-  const dates = buildAvailableDates();
-  wrap.innerHTML = dates.map(d => {
-    const iso = d.toISOString().slice(0,10);
+
+function renderCalendar(){
+  const wrap = document.getElementById('calendar-wrapper');
+  if (!wrap) return;
+
+  const monthNames = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+  const dayNames = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+
+  const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  
+  const isCurrentMonth = currentYear === today.getFullYear() && currentMonth === today.getMonth();
+
+  let html = `
+    <div class="calendar-header">
+      <div class="calendar-title">${monthNames[currentMonth]} ${currentYear}</div>
+      <div class="calendar-nav">
+        <button class="calendar-btn" onclick="prevMonth()" ${isCurrentMonth ? 'disabled' : ''}><i class="fa-solid fa-chevron-left"></i></button>
+        <button class="calendar-btn" onclick="nextMonth()"><i class="fa-solid fa-chevron-right"></i></button>
+      </div>
+    </div>
+    <div class="calendar-grid">
+  `;
+
+  for (let d of dayNames) {
+    html += `<div class="calendar-day-name">${d}</div>`;
+  }
+
+  for (let i = 0; i < firstDay; i++) {
+    html += `<div class="calendar-day empty"></div>`;
+  }
+
+  for (let i = 1; i <= daysInMonth; i++) {
+    const d = new Date(currentYear, currentMonth, i);
+    const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    
+    let disabled = false;
+    if (d < today) {
+      disabled = true;
+    }
+    if (d.getTime() === today.getTime()) {
+      const [fh, fm] = (appData.settings.fermeture || '20:00').split(':').map(Number);
+      const closingTime = fh * 60 + fm;
+      const nowTime = new Date().getHours() * 60 + new Date().getMinutes();
+      if (nowTime >= closingTime) {
+        disabled = true;
+      }
+    }
+    
+    if ((appData.settings.joursFermeture||[]).includes(d.getDay())) {
+      disabled = true;
+    }
+
     const sel = booking.date === iso ? 'selected' : '';
-    return `<div class="date-chip ${sel}" onclick="selectDate('${iso}')">
-      <div class="dow">${d.toLocaleDateString('fr-FR',{weekday:'short'})}</div>
-      <div class="dnum">${d.getDate()}</div>
-    </div>`;
-  }).join('');
+    const click = disabled ? '' : `onclick="selectDate('${iso}')"`;
+    const classes = `calendar-day ${sel} ${disabled ? 'disabled' : ''}`;
+    
+    html += `<div class="${classes}" ${click}>${i}</div>`;
+  }
+
+  html += `</div>`;
+  wrap.innerHTML = html;
   renderTimeGrid();
 }
-window.selectDate = (iso) => { booking.date = iso; booking.heure = null; renderDateScroll(); updateTicketBar(); };
+
+window.prevMonth = () => {
+  currentMonth--;
+  if (currentMonth < 0) {
+    currentMonth = 11;
+    currentYear--;
+  }
+  renderCalendar();
+};
+
+window.nextMonth = () => {
+  currentMonth++;
+  if (currentMonth > 11) {
+    currentMonth = 0;
+    currentYear++;
+  }
+  renderCalendar();
+};
+
+window.selectDate = (iso) => { booking.date = iso; booking.heure = null; renderCalendar(); updateTicketBar(); };
 
 function generateSlots(){
-  const [oh, om] = appData.settings.ouverture.split(':').map(Number);
-  const [fh, fm] = appData.settings.fermeture.split(':').map(Number);
+  const [oh, om] = (appData.settings.ouverture || '09:00').split(':').map(Number);
+  const [fh, fm] = (appData.settings.fermeture || '20:00').split(':').map(Number);
   const slots = [];
   let t = oh*60+om;
   const end = fh*60+fm;
   const step = Number(appData.settings.dureeSlot) || 30;
+  
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const isoToday = `${year}-${month}-${day}`;
+  
+  const isToday = booking.date === isoToday;
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
   while (t + step <= end){
-    const h = String(Math.floor(t/60)).padStart(2,'0');
-    const m = String(t%60).padStart(2,'0');
-    slots.push(`${h}:${m}`);
+    if (!isToday || t > currentMinutes) {
+      const h = String(Math.floor(t/60)).padStart(2,'0');
+      const m = String(t%60).padStart(2,'0');
+      slots.push(`${h}:${m}`);
+    }
     t += step;
   }
   return slots;
 }
+
 function renderTimeGrid(){
   const grid = document.getElementById('time-grid');
   if (!booking.date){ grid.innerHTML = `<div class="section-sub">Choisissez une date pour voir les créneaux</div>`; return; }
   const slots = generateSlots();
+  if (slots.length === 0) {
+    grid.innerHTML = `<div class="section-sub" style="color:var(--warning); text-align:center; padding: 20px;">Aucun créneau disponible pour cette date.</div>`;
+    return;
+  }
   const taken = new Set(
     appData.reservations
       .filter(([k,r]) => r.date === booking.date && r.statut !== 'annule')
@@ -642,7 +766,13 @@ function renderTimeGrid(){
     return `<div class="time-chip ${sel} ${isTaken?'taken':''}" onclick="${isTaken?'':`selectHeure('${s}')`}">${s}</div>`;
   }).join('');
 }
-window.selectHeure = (h) => { booking.heure = h; renderTimeGrid(); updateTicketBar(); };
+
+window.selectHeure = (h) => { 
+  booking.heure = h; 
+  renderTimeGrid(); 
+  updateTicketBar(); 
+  setTimeout(() => { if (stepIsValid(booking.step)) window.nextStep(); }, 350);
+};
 
 // ================= CLIENT : STEP 4 =================
 window.validateStep4 = () => {
@@ -673,9 +803,18 @@ function renderStepper(){
     const n = i+1;
     const cls = n < booking.step ? 'done' : (n === booking.step ? 'active' : '');
     const connector = n < STEP_LABELS.length ? '<div class="step-connector"></div>' : '';
-    return `<div class="step-pill ${cls}">${n<booking.step?'<i class="fa-solid fa-check"></i>':n}. ${lbl}</div>${connector}`;
+    const click = n < booking.step ? `onclick="window.goToStep(${n})"` : '';
+    const style = n < booking.step ? 'cursor:pointer; transition:0.2s;' : 'transition:0.2s;';
+    return `<div class="step-pill ${cls}" style="${style}" ${click}>${n<booking.step?'<i class="fa-solid fa-check"></i>':n}. ${lbl}</div>${connector}`;
   }).join('');
 }
+
+window.goToStep = (n) => {
+  if (n < booking.step) {
+    booking.step = n;
+    renderBookingStep();
+  }
+};
 
 function stepIsValid(step){
   switch(step){
@@ -694,7 +833,19 @@ function renderBookingStep(){
   }
   document.getElementById('c-step-success').classList.add('masque');
   renderStepper();
-  if (booking.step === 3) renderDateScroll();
+  if (booking.step === 3) {
+    if (!booking.date) {
+      const d = getFirstAvailableDate();
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      booking.date = `${year}-${month}-${day}`;
+      
+      currentMonth = d.getMonth();
+      currentYear = d.getFullYear();
+    }
+    renderCalendar();
+  }
   if (booking.step === 5) renderConfirmRecap();
   updateTicketBar();
 }
@@ -737,7 +888,7 @@ async function submitReservation(){
   }});
   document.getElementById('c-step-5').classList.add('masque');
   document.getElementById('c-step-success').classList.remove('masque');
-  document.getElementById('success-ref').textContent = `${booking.nom}, votre rendez-vous du ${booking.date} à ${booking.heure} est enregistré. Le salon le confirmera sous peu.`;
+  document.getElementById('success-ref').textContent = `${booking.nom}, votre rendez-vous du ${new Date(booking.date).toLocaleDateString('fr-FR')} à ${booking.heure} est enregistré. Le salon le confirmera sous peu.`;
   updateTicketBar();
   syncAndRender();
 }
