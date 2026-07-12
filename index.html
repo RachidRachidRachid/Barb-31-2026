@@ -380,8 +380,13 @@ td{padding:14px 16px;border-top:1px solid var(--border);vertical-align:middle;}
 <script>
 /* ==========================================================
    BARBER PRO DZ — connecté à Google Sheets via Apps Script
+   
+   ⚠️ ATTENTION : POUR CONNECTER VOTRE PROPRE GOOGLE SHEETS :
+   1. Déployez le code Apps Script en tant qu'Application Web
+   2. Copiez l'URL générée
+   3. Remplacez l'URL ci-dessous par VOTRE URL (en gardant les guillemets)
    ========================================================== */
-const API_URL = 'https://script.google.com/macros/s/AKfycbzpr6ZHg3RfNRnECPD-e-BQ2qFkqIWbtIPIvvuZN_af7Uj1stU-Z1m-pz75Llh-EpAJAQ/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbzpr6ZHg3RfNRnECPD-e-BQ2qFkqIWbtIPIvvuZN_af7Uj1stU-Z1m-pz75Llh-EpAJAQ/exec'; // REMPLACEZ CETTE LIGNE
 const POLL_MS = 5000;
 
 const DEFAULT_SETTINGS = { nomSalon: 'Barber Pro DZ', adresse: '', telephone: '', devise: 'DA', ouverture: '09:00', fermeture: '20:00', dureeSlot: 30, joursFermeture: [] };
@@ -434,6 +439,7 @@ function formatTimeSetting(val, defaultVal) {
 }
 
 function normalizeData(raw){
+  if (!raw || typeof raw !== 'object') raw = {};
   const services = (raw.services||[]).map(r => [String(r.ID), { nom: r.Nom, tarif: Number(r.Tarif)||0, duree: Number(r.Duree)||0 }]);
   const coiffeurs = (raw.coiffeurs||[]).map(r => [String(r.ID), { nom: r.Nom, specialite: r.Specialite||'' }]);
   const reservations = (raw.reservations||[]).map(r => {
@@ -465,7 +471,11 @@ async function syncAndRender(){
   try {
     const raw = await apiGet();
     appData = normalizeData(raw);
-
+    document.getElementById('status-cloud').innerHTML = '<span style="color:var(--success);">● SYNC ACTIVE</span>';
+  } catch (err) {
+    console.error('Erreur de synchronisation Sheets:', err);
+    document.getElementById('status-cloud').innerHTML = '<span style="color:var(--danger);">● SYNC HORS LIGNE</span>';
+  } finally {
     applyBranding();
     renderClientServices();
     renderClientCoiffeurs();
@@ -474,11 +484,7 @@ async function syncAndRender(){
     renderServicesAdmin();
     renderCoiffeursAdmin();
     if (firstSync) { fillSettingsForm(); firstSync = false; }
-
     document.getElementById('loader').classList.add('masque');
-  } catch (err) {
-    console.error('Erreur de synchronisation Sheets:', err);
-    document.getElementById('status-cloud').innerHTML = '<span style="color:var(--danger);">● SYNC HORS LIGNE</span>';
   }
 }
 
@@ -880,17 +886,23 @@ window.prevStep = () => {
 };
 
 async function submitReservation(){
-  const total = booking.services.reduce((s,x)=>s+x.tarif,0);
-  const serviceStr = booking.services.map(s => s.nom).join(' + ');
-  await apiPost('createReservation', { data: {
-    date: booking.date, heure: booking.heure, nom: booking.nom, tel: booking.tel,
-    service: serviceStr, total
-  }});
-  document.getElementById('c-step-5').classList.add('masque');
-  document.getElementById('c-step-success').classList.remove('masque');
-  document.getElementById('success-ref').textContent = `${booking.nom}, votre rendez-vous du ${new Date(booking.date).toLocaleDateString('fr-FR')} à ${booking.heure} est enregistré. Le salon le confirmera sous peu.`;
-  updateTicketBar();
-  syncAndRender();
+  const btn = document.getElementById('btn-next');
+  if (btn) btn.disabled = true;
+  try {
+    const total = booking.services.reduce((s,x)=>s+x.tarif,0);
+    const serviceStr = booking.services.map(s => s.nom).join(' + ');
+    await apiPost('createReservation', { 
+      nom: booking.nom, tel: booking.tel, service: serviceStr, coiffeur: booking.coiffeurNom, date: booking.date, heure: booking.heure, prix: total
+    });
+    document.getElementById('c-step-5').classList.add('masque');
+    document.getElementById('c-step-success').classList.remove('masque');
+    document.getElementById('success-ref').textContent = `${booking.nom}, votre rendez-vous du ${new Date(booking.date).toLocaleDateString('fr-FR')} à ${booking.heure} est enregistré. Le salon le confirmera sous peu.`;
+    updateTicketBar();
+    syncAndRender();
+  } catch(e) {
+    alert("Impossible de communiquer avec le serveur (Sheets non connecté). Vérifiez la console.");
+    if (btn) btn.disabled = false;
+  }
 }
 
 window.resetBooking = () => {
