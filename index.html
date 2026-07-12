@@ -370,51 +370,97 @@ td{padding:14px 16px;border-top:1px solid var(--border);vertical-align:middle;}
   </div>
 </main>
 
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getDatabase, ref, push, remove, update, set, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyDsjrxUlmUrko9oKADYzgOoHC_qfClEP7Y",
-  authDomain: "barber-pro-dz.firebaseapp.com",
-  databaseURL: "https://barber-pro-dz-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "barber-pro-dz",
-  storageBucket: "barber-pro-dz.firebasestorage.app",
-  messagingSenderId: "1011402409421",
-  appId: "1:1011402409421:web:218f72ccf7937cfeb0b084"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-const dbRef = ref(db, 'barber_pro_db');
+<script>
+/* ==========================================================
+   BARBER PRO DZ — connecté à Google Sheets via Apps Script
+   Remplace l'URL ci-dessous par celle de TON déploiement Web App
+   ========================================================== */
+const API_URL = 'https://script.google.com/macros/s/AKfycbw46lO4QZC0ZwsD1W0KA_DKOIKXRlFdr59cANjOwT4m2VxibSFJUBn8I0ra4xYX7_QiTg/exec';
+const POLL_MS = 5000;
 
 const DEFAULT_SETTINGS = { nomSalon: 'Barber Pro DZ', adresse: '', telephone: '', devise: 'DA', ouverture: '09:00', fermeture: '20:00', dureeSlot: 30, joursFermeture: [] };
 const JOURS = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
+const STATUT_FR_TO_CODE = { 'en attente':'attente', 'confirmé':'confirme', 'confirme':'confirme', 'annulé':'annule', 'annule':'annule' };
+const STATUT_CODE_TO_FR = { attente:'En attente', confirme:'Confirmé', annule:'Annulé' };
 
 let appData = { services: [], coiffeurs: [], reservations: [], settings: { ...DEFAULT_SETTINGS } };
 let firstSync = true;
 
 let booking = { step: 1, services: [], coiffeurId: null, coiffeurNom: null, date: null, heure: null, nom: '', tel: '' };
 
-// ---------- SYNC ----------
-onValue(dbRef, (snapshot) => {
-  const data = snapshot.val() || {};
-  appData.services = data.services ? Object.entries(data.services) : [];
-  appData.coiffeurs = data.coiffeurs ? Object.entries(data.coiffeurs) : [];
-  appData.reservations = data.reservations ? Object.entries(data.reservations) : [];
-  appData.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
+// ---------- APPEL API ----------
+async function apiGet(){
+  const res = await fetch(API_URL, { method: 'GET' });
+  return res.json();
+}
+async function apiPost(action, payload){
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    body: JSON.stringify({ action, ...payload })
+  });
+  return res.json();
+}
 
-  applyBranding();
-  renderClientServices();
-  renderClientCoiffeurs();
-  renderDashboard();
-  renderReservationsTable();
-  renderServicesAdmin();
-  renderCoiffeursAdmin();
-  if (firstSync) { fillSettingsForm(); firstSync = false; }
+function parseFrDate(str){
+  // "dd/MM/yyyy HH:mm:ss" -> timestamp
+  if (!str) return 0;
+  const [d, t] = String(str).split(' ');
+  const [day, month, year] = (d||'').split('/').map(Number);
+  const [h, m, s] = (t||'0:0:0').split(':').map(Number);
+  return new Date(year, (month||1)-1, day, h||0, m||0, s||0).getTime();
+}
 
-  document.getElementById('loader').classList.add('masque');
-});
+function normalizeData(raw){
+  const services = (raw.services||[]).map(r => [String(r.ID), { nom: r.Nom, tarif: Number(r.Tarif)||0, duree: Number(r.Duree)||0 }]);
+  const coiffeurs = (raw.coiffeurs||[]).map(r => [String(r.ID), { nom: r.Nom, specialite: r.Specialite||'' }]);
+  const reservations = (raw.reservations||[]).map(r => {
+    const statutFr = String(r.Statut||'En attente').trim().toLowerCase();
+    return [String(r.ID), {
+      clientNom: r.Nom, clientTel: r.Telephone,
+      prestations: String(r.Service||'').split(' + ').filter(Boolean).map(nom => ({ nom, tarif:0, duree:0 })),
+      coiffeurId: null, coiffeurNom: r.Coiffeur || '',
+      date: r.Date, heure: r.Heure, total: Number(r.Prix)||0,
+      statut: STATUT_FR_TO_CODE[statutFr] || 'attente',
+      creeLe: parseFrDate(r['Date creation'])
+    }];
+  });
+  const p = raw.parametres || {};
+  const settings = {
+    nomSalon: p.nomSalon || DEFAULT_SETTINGS.nomSalon,
+    devise: p.devise || DEFAULT_SETTINGS.devise,
+    adresse: p.adresse || '',
+    telephone: p.telephone || '',
+    ouverture: p.ouverture || DEFAULT_SETTINGS.ouverture,
+    fermeture: p.fermeture || DEFAULT_SETTINGS.fermeture,
+    dureeSlot: Number(p.dureeSlot) || DEFAULT_SETTINGS.dureeSlot,
+    joursFermeture: String(p.joursFermeture||'').split(',').filter(x=>x!=='').map(Number)
+  };
+  return { services, coiffeurs, reservations, settings };
+}
+
+async function syncAndRender(){
+  try {
+    const raw = await apiGet();
+    appData = normalizeData(raw);
+
+    applyBranding();
+    renderClientServices();
+    renderClientCoiffeurs();
+    renderDashboard();
+    renderReservationsTable();
+    renderServicesAdmin();
+    renderCoiffeursAdmin();
+    if (firstSync) { fillSettingsForm(); firstSync = false; }
+
+    document.getElementById('loader').classList.add('masque');
+  } catch (err) {
+    console.error('Erreur de synchronisation Sheets:', err);
+    document.getElementById('status-cloud').innerHTML = '<span style="color:var(--danger);">● SYNC HORS LIGNE</span>';
+  }
+}
+
+syncAndRender();
+setInterval(syncAndRender, POLL_MS);
 
 function money(n){ return `${n} ${appData.settings.devise || 'DA'}`; }
 
@@ -523,8 +569,8 @@ function renderClientCoiffeurs(){
     <div class="kpi-sub">Premier disponible</div>
   </div>`;
   const cards = appData.coiffeurs.map(([key, c]) => `
-    <div class="barber-card ${booking.coiffeurId===key?'selected':''}" onclick="selectCoiffeur('${key}','${c.nom.replace(/'/g,"\\'")}')">
-      <div class="barber-avatar">${c.nom.charAt(0).toUpperCase()}</div>
+    <div class="barber-card ${booking.coiffeurId===key?'selected':''}" onclick="selectCoiffeur('${key}','${(c.nom||'').replace(/'/g,"\\'")}')">
+      <div class="barber-avatar">${(c.nom||'?').charAt(0).toUpperCase()}</div>
       <div style="font-weight:600;">${c.nom}</div>
       <div class="kpi-sub">${c.specialite||'Barbier'}</div>
     </div>`).join('');
@@ -587,7 +633,7 @@ function renderTimeGrid(){
   const slots = generateSlots();
   const taken = new Set(
     appData.reservations
-      .filter(([k,r]) => r.date === booking.date && r.statut !== 'annule' && booking.coiffeurId !== 'any' && r.coiffeurId === booking.coiffeurId)
+      .filter(([k,r]) => r.date === booking.date && r.statut !== 'annule')
       .map(([k,r]) => r.heure)
   );
   grid.innerHTML = slots.map(s => {
@@ -682,25 +728,18 @@ window.prevStep = () => {
   renderBookingStep();
 };
 
-function submitReservation(){
+async function submitReservation(){
   const total = booking.services.reduce((s,x)=>s+x.tarif,0);
-  const payload = {
-    clientNom: booking.nom,
-    clientTel: booking.tel,
-    prestations: booking.services.map(s => ({ nom: s.nom, tarif: s.tarif, duree: s.duree })),
-    coiffeurId: booking.coiffeurId,
-    coiffeurNom: booking.coiffeurNom,
-    date: booking.date,
-    heure: booking.heure,
-    total,
-    statut: 'attente',
-    creeLe: Date.now()
-  };
-  push(ref(db, 'barber_pro_db/reservations'), payload);
+  const serviceStr = booking.services.map(s => s.nom).join(' + ');
+  await apiPost('createReservation', { data: {
+    date: booking.date, heure: booking.heure, nom: booking.nom, tel: booking.tel,
+    service: serviceStr, total
+  }});
   document.getElementById('c-step-5').classList.add('masque');
   document.getElementById('c-step-success').classList.remove('masque');
   document.getElementById('success-ref').textContent = `${booking.nom}, votre rendez-vous du ${booking.date} à ${booking.heure} est enregistré. Le salon le confirmera sous peu.`;
   updateTicketBar();
+  syncAndRender();
 }
 
 window.resetBooking = () => {
@@ -777,8 +816,8 @@ function renderReservationsTable(){
     `<tr><td colspan="7" class="empty-row">Aucune réservation trouvée</td></tr>`;
 }
 
-window.updateStatus = (id, status) => update(ref(db, `barber_pro_db/reservations/${id}`), { statut: status });
-window.deleteResa = (id) => { if (confirm('Supprimer définitivement cette réservation ?')) remove(ref(db, `barber_pro_db/reservations/${id}`)); };
+window.updateStatus = async (id, status) => { await apiPost('updateReservationStatus', { id, statut: STATUT_CODE_TO_FR[status] }); syncAndRender(); };
+window.deleteResa = async (id) => { if (confirm('Supprimer définitivement cette réservation ?')) { await apiPost('deleteReservation', { id }); syncAndRender(); } };
 
 window.exportData = () => {
   const header = ['Client','Téléphone','Services','Coiffeur','Date','Heure','Total','Statut'];
@@ -820,16 +859,16 @@ window.openServiceModal = (key) => {
     `<button class="btn btn-outline" onclick="closeModal()">Annuler</button>
      <button class="btn btn-primary" onclick="saveService(${key?`'${key}'`:'null'})">Enregistrer</button>`);
 };
-window.saveService = (key) => {
+window.saveService = async (key) => {
   const nom = document.getElementById('svc-nom').value.trim();
   const tarif = Number(document.getElementById('svc-tarif').value);
   const duree = Number(document.getElementById('svc-duree').value);
   if (!nom || !tarif || !duree) return;
-  if (key) update(ref(db, `barber_pro_db/services/${key}`), { nom, tarif, duree });
-  else push(ref(db, 'barber_pro_db/services'), { nom, tarif, duree });
+  await apiPost('saveService', { data: { id: key, nom, tarif, duree } });
   closeModal();
+  syncAndRender();
 };
-window.deleteService = (key) => { if (confirm('Supprimer ce service ?')) remove(ref(db, `barber_pro_db/services/${key}`)); };
+window.deleteService = async (key) => { if (confirm('Supprimer ce service ?')) { await apiPost('deleteService', { id: key }); syncAndRender(); } };
 
 // ================= ADMIN : COIFFEURS CRUD =================
 function renderCoiffeursAdmin(){
@@ -854,15 +893,15 @@ window.openCoiffeurModal = (key) => {
     `<button class="btn btn-outline" onclick="closeModal()">Annuler</button>
      <button class="btn btn-primary" onclick="saveCoiffeur(${key?`'${key}'`:'null'})">Enregistrer</button>`);
 };
-window.saveCoiffeur = (key) => {
+window.saveCoiffeur = async (key) => {
   const nom = document.getElementById('cof-nom').value.trim();
   const specialite = document.getElementById('cof-spe').value.trim();
   if (!nom) return;
-  if (key) update(ref(db, `barber_pro_db/coiffeurs/${key}`), { nom, specialite });
-  else push(ref(db, 'barber_pro_db/coiffeurs'), { nom, specialite });
+  await apiPost('saveCoiffeur', { data: { id: key, nom, specialite } });
   closeModal();
+  syncAndRender();
 };
-window.deleteCoiffeur = (key) => { if (confirm('Supprimer ce coiffeur ?')) remove(ref(db, `barber_pro_db/coiffeurs/${key}`)); };
+window.deleteCoiffeur = async (key) => { if (confirm('Supprimer ce coiffeur ?')) { await apiPost('deleteCoiffeur', { id: key }); syncAndRender(); } };
 
 // ================= ADMIN : PARAMETRES =================
 function fillSettingsForm(){
@@ -879,7 +918,7 @@ function fillSettingsForm(){
     return `<div class="form-check-pill ${checked?'checked':''}" data-day="${i}" onclick="this.classList.toggle('checked')">${j}</div>`;
   }).join('');
 }
-window.saveSettings = () => {
+window.saveSettings = async () => {
   const joursFermeture = [...document.querySelectorAll('#set-jours .form-check-pill.checked')].map(el => Number(el.dataset.day));
   const payload = {
     nomSalon: document.getElementById('set-nom').value.trim() || 'Barber Pro DZ',
@@ -891,12 +930,12 @@ window.saveSettings = () => {
     dureeSlot: Number(document.getElementById('set-duree').value) || 30,
     joursFermeture
   };
-  set(ref(db, 'barber_pro_db/settings'), payload).then(() => {
-    const btn = event.target.closest('button');
-    const old = btn.innerHTML;
-    btn.innerHTML = '<i class="fa-solid fa-check"></i> Enregistré';
-    setTimeout(() => btn.innerHTML = old, 1500);
-  });
+  const btn = event.target.closest('button');
+  const old = btn.innerHTML;
+  await apiPost('saveParametres', { data: payload });
+  btn.innerHTML = '<i class="fa-solid fa-check"></i> Enregistré';
+  setTimeout(() => btn.innerHTML = old, 1500);
+  syncAndRender();
 };
 
 renderBookingStep();
